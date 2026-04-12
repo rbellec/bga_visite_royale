@@ -223,6 +223,8 @@
 
 /* Court move panel */
 #vr-court-move {
-    margin-top: 8px;
-    text-align: center;
+    gap: 8px;
+    margin-top: 12px;
+    justify-content: center;
+    align-items: center;
 }

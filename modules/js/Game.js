@@ -118,7 +118,9 @@ export class Game {
                     <button id="vr-guard-cancel-btn" class="bgabutton bgabutton_red">Cancel</button>
                 </div>
                 <div id="vr-court-move" style="display:none;">
-                    <button id="vr-court-btn" class="bgabutton bgabutton_blue">Move entire Court (2 King cards)</button>
+                    <button id="vr-court-single-btn" class="bgabutton bgabutton_blue">Move King only (1 card)</button>
+                    <button id="vr-court-btn" class="bgabutton bgabutton_blue">Move entire Court (2 cards)</button>
+                    <button id="vr-court-cancel-btn" class="bgabutton bgabutton_red">Cancel</button>
                 </div>
             </div>
         `;
@@ -129,6 +131,11 @@ export class Game {
         document.getElementById('vr-guard2-btn').addEventListener('click', () => this.playGuardChoice(3));
         document.getElementById('vr-guard-both-btn').addEventListener('click', () => this.playGuardBoth());
         document.getElementById('vr-guard-cancel-btn').addEventListener('click', () => this.hideGuardChoice());
+
+        // Court move handlers
+        document.getElementById('vr-court-single-btn').addEventListener('click', () => this.playCourtSingle());
+        document.getElementById('vr-court-btn').addEventListener('click', () => this.playCourtMove());
+        document.getElementById('vr-court-cancel-btn').addEventListener('click', () => this.hideCourtChoice());
     }
 
     placePieces(pieces) {
@@ -208,9 +215,13 @@ export class Game {
         }
 
         if (type === 'king') {
-            // Check if player wants to do Court move (2 king cards)
-            // For now, just play single king card
-            this.bga.actions.performAction('actPlayCard', { card_id: parseInt(card.card_id) });
+            // Count King cards in hand
+            const kingCards = document.querySelectorAll('.vr-card[data-card-type="king"]:not(.vr-card-disabled)');
+            if (kingCards.length >= 2) {
+                this.showCourtChoice(card.card_id);
+            } else {
+                this.bga.actions.performAction('actPlayCard', { card_id: parseInt(card.card_id) });
+            }
             return;
         }
 
@@ -247,6 +258,35 @@ export class Game {
             card_id: parseInt(this.currentGuardCardId),
         });
         this.hideGuardChoice();
+    }
+
+    showCourtChoice(cardId) {
+        this.currentKingCardId = cardId;
+        document.getElementById('vr-court-move').style.display = 'flex';
+    }
+
+    hideCourtChoice() {
+        document.getElementById('vr-court-move').style.display = 'none';
+        this.currentKingCardId = null;
+    }
+
+    playCourtSingle() {
+        if (this.currentKingCardId === null) return;
+        this.bga.actions.performAction('actPlayCard', { card_id: parseInt(this.currentKingCardId) });
+        this.hideCourtChoice();
+    }
+
+    playCourtMove() {
+        if (this.currentKingCardId === null) return;
+        // Find a second King card
+        const kingCards = document.querySelectorAll('.vr-card[data-card-type="king"]:not(.vr-card-disabled)');
+        const ids = Array.from(kingCards).map(c => parseInt(c.dataset.cardId)).filter(id => id !== parseInt(this.currentKingCardId));
+        if (ids.length === 0) return;
+        this.bga.actions.performAction('actPlayCourtMove', {
+            card_id1: parseInt(this.currentKingCardId),
+            card_id2: ids[0],
+        });
+        this.hideCourtChoice();
     }
 
     showWizardTargets(targets) {
