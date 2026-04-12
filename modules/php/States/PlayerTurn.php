@@ -161,6 +161,13 @@ class PlayerTurn extends GameState
         if ($card['card_type'] !== 'guard') {
             throw new UserException('Not a Guard card');
         }
+        $subtype = $card['card_subtype'] ?? '';
+        if ($subtype === 'g11') {
+            throw new UserException('Guard 1+1 cards must move both guards — use Both');
+        }
+        if ($subtype !== 'g1') {
+            throw new UserException('Use this action only for Guard 1 cards');
+        }
         if ($guardId !== Game::CHAR_GUARD1 && $guardId !== Game::CHAR_GUARD2) {
             throw new UserException('Invalid guard');
         }
@@ -168,11 +175,9 @@ class PlayerTurn extends GameState
         $pieces = $this->game->getAllPiecePositions();
         $direction = $this->game->getPlayerDirection($activePlayerId);
         $playedCount = (int)($this->game->bga->globals->get('played_count') ?? 0);
-        $subtype = $card['card_subtype'] ?? '';
-        $steps = ($subtype === 'g11') ? 2 : 1;
 
         $guardPos = (int)$pieces[$guardId]['position'];
-        $newPos = $guardPos + ($direction * $steps);
+        $newPos = $guardPos + $direction;
         if (!$this->isValidGuardMove($guardId, $newPos, $pieces)) {
             throw new UserException('This guard cannot move there');
         }
@@ -350,24 +355,22 @@ class PlayerTurn extends GameState
                 $g1Pos = (int)$pieces[Game::CHAR_GUARD1]['position'];
                 $g2Pos = (int)$pieces[Game::CHAR_GUARD2]['position'];
                 $kingPos = (int)$pieces[Game::CHAR_KING]['position'];
-                $steps = ($subtype === 'g11') ? 2 : 1;
-                // Can move guard1?
-                $newG1 = $g1Pos + ($direction * $steps);
-                if ($newG1 >= Game::POS_MIN && $newG1 <= Game::POS_MAX && $newG1 !== $kingPos &&
-                    $this->game->isKingBetweenGuards($kingPos, $newG1, $g2Pos)) return true;
-                // Can move guard2?
-                $newG2 = $g2Pos + ($direction * $steps);
-                if ($newG2 >= Game::POS_MIN && $newG2 <= Game::POS_MAX && $newG2 !== $kingPos &&
-                    $this->game->isKingBetweenGuards($kingPos, $g1Pos, $newG2)) return true;
-                // For g11: both guards 1 each?
                 if ($subtype === 'g11') {
+                    // Guard 1+1: both guards move 1 space each
                     $nG1 = $g1Pos + $direction;
                     $nG2 = $g2Pos + $direction;
-                    if ($nG1 >= Game::POS_MIN && $nG1 <= Game::POS_MAX &&
+                    return $nG1 >= Game::POS_MIN && $nG1 <= Game::POS_MAX &&
                         $nG2 >= Game::POS_MIN && $nG2 <= Game::POS_MAX &&
                         $nG1 !== $kingPos && $nG2 !== $kingPos &&
-                        $this->game->isKingBetweenGuards($kingPos, $nG1, $nG2)) return true;
+                        $this->game->isKingBetweenGuards($kingPos, $nG1, $nG2);
                 }
+                // Guard g1: move one guard 1 space
+                $newG1 = $g1Pos + $direction;
+                if ($newG1 >= Game::POS_MIN && $newG1 <= Game::POS_MAX && $newG1 !== $kingPos &&
+                    $this->game->isKingBetweenGuards($kingPos, $newG1, $g2Pos)) return true;
+                $newG2 = $g2Pos + $direction;
+                if ($newG2 >= Game::POS_MIN && $newG2 <= Game::POS_MAX && $newG2 !== $kingPos &&
+                    $this->game->isKingBetweenGuards($kingPos, $g1Pos, $newG2)) return true;
                 return false;
         }
         return false;
@@ -400,12 +403,13 @@ class PlayerTurn extends GameState
     private function canUseWizardPower(int $playerId, array $pieces): bool
     {
         $w = (int)$pieces[Game::CHAR_WIZARD]['position'];
-        $k = (int)$pieces[Game::CHAR_KING]['position'];
         $g1 = (int)$pieces[Game::CHAR_GUARD1]['position'];
         $g2 = (int)$pieces[Game::CHAR_GUARD2]['position'];
-        return $this->game->isKingBetweenGuards($w, $g1, $g2)
-            || $this->game->isKingBetweenGuards($k, $w, $g2)
-            || $this->game->isKingBetweenGuards($k, $g1, $w);
+        // Wizard must be strictly between the two Guards (in the Court)
+        $minG = min($g1, $g2);
+        $maxG = max($g1, $g2);
+        if ($w <= $minG || $w >= $maxG) return false;
+        return !empty($this->getWizardTargets($pieces));
     }
 
     private function getWizardTargets(array $pieces): array
@@ -415,9 +419,18 @@ class PlayerTurn extends GameState
         $g1 = (int)$pieces[Game::CHAR_GUARD1]['position'];
         $g2 = (int)$pieces[Game::CHAR_GUARD2]['position'];
         $targets = [];
-        if ($this->game->isKingBetweenGuards($w, $g1, $g2)) $targets[] = Game::CHAR_KING;
-        if ($this->game->isKingBetweenGuards($k, $w, $g2)) $targets[] = Game::CHAR_GUARD1;
-        if ($this->game->isKingBetweenGuards($k, $g1, $w)) $targets[] = Game::CHAR_GUARD2;
+        // Summon King to Wizard's position — King must still be between Guards
+        if ($k !== $w && $this->game->isKingBetweenGuards($w, $g1, $g2)) {
+            $targets[] = Game::CHAR_KING;
+        }
+        // Summon Guard1 to Wizard's position — King must still be between Guards
+        if ($g1 !== $w && $this->game->isKingBetweenGuards($k, $w, $g2)) {
+            $targets[] = Game::CHAR_GUARD1;
+        }
+        // Summon Guard2 to Wizard's position — King must still be between Guards
+        if ($g2 !== $w && $this->game->isKingBetweenGuards($k, $g1, $w)) {
+            $targets[] = Game::CHAR_GUARD2;
+        }
         return $targets;
     }
 

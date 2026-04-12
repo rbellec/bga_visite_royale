@@ -195,9 +195,15 @@ export class Game {
         const type = card.card_type;
         const subtype = card.card_subtype || '';
 
-        if (type === 'guard' && (subtype === 'g1' || subtype === 'g11')) {
-            // Show guard choice UI
+        if (type === 'guard' && subtype === 'g1') {
+            // Show guard choice UI for single guard move
             this.showGuardChoice(card.card_id, subtype);
+            return;
+        }
+
+        if (type === 'guard' && subtype === 'g11') {
+            // Guard 1+1: must move both guards, play directly
+            this.bga.actions.performAction('actPlayGuardBoth', { card_id: parseInt(card.card_id) });
             return;
         }
 

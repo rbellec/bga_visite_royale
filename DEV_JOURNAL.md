@@ -119,9 +119,45 @@ Ce fichier documente les etapes, difficultes et decisions prises pendant le deve
 
 ---
 
+## Etape 4 : Tests des types de cartes (2026-04-12)
+
+### Ce qui a ete teste
+- **Carte King** : Roi pos 9→10 (+1 direction rouge) ✓
+- **Carte Guard g1** : Guard1 pos 7→6 (-1 direction verte), choix de garde fonctionne ✓
+- **Carte Guard gflank** : Gardes repositionnes autour du Roi (King±1) ✓
+- **Carte Guard g11** : correctement desactivee quand mouvement invalide ✓
+- **Carte Jester** : pos 10→14→16 (cumul de 2 cartes meme type) ✓, puis 16→13 (direction verte) ✓
+- **Carte Wizard** : pos 6→4 (direction verte) ✓
+- **Cumul de cartes** : jouer plusieurs cartes du meme type en un tour fonctionne ✓
+- **End turn** : transition vers MoveCrown → DrawCards → NextPlayer → PlayerTurn ✓
+
+### Bug #6 : Pouvoir du Sorcier — condition incorrecte
+- `canUseWizardPower()` verifiait 3 conditions (`isKingBetweenGuards(w,g1,g2)`, etc.)
+- La regle dit : le Sorcier peut utiliser son pouvoir quand il est **strictement entre les 2 Gardes** (dans la Cour)
+- Ensuite il attire Roi ou un Garde sur sa case, si la contrainte Roi-entre-Gardes est respectee apres le mouvement
+- L'ancienne logique permettait d'utiliser le pouvoir quand le Sorcier etait hors de la Cour
+- Solution : verifier d'abord que `w > min(g1,g2) && w < max(g1,g2)`, puis filtrer les cibles valides
+- **Pour le skill** : bien comprendre les regles avant d'implementer les conditions de pouvoir
+
+### Bug #7 : Carte Guard 1+1 — mauvaise interpretation
+- `actPlayGuardChoice` traitait g11 comme "un garde bouge de 2 cases" (`$steps = ($subtype === 'g11') ? 2 : 1`)
+- La regle dit : une carte 1+1 oblige a deplacer **les deux gardes** de 1 case chacun
+- Il n'y a pas d'option "un seul garde" pour une carte 1+1
+- Solution : g11 appelle directement `actPlayGuardBoth`, pas `actPlayGuardChoice`
+- Le JS a ete mis a jour pour ne plus afficher le choix individuel pour les cartes g11
+- `canPlayCard` corrige : g11 ne teste plus l'option "un garde de 2", seulement "les deux de 1"
+
+### Observations
+- La navigation entre joueurs (testuser=) fonctionne bien pour le hotseat
+- Le quit programmatique (`gameui.ajaxcall` depuis la page de jeu) fonctionne aussi
+- Le zombie handler gere automatiquement les tours du joueur qui a quitte
+
+---
+
 ## Prochaines etapes
 
-- Tester les autres types de cartes (Roi, Gardes, Fou)
-- Tester les pouvoirs (Sorcier, Fou joker)
+- Tester le pouvoir du Sorcier (avec Sorcier entre les Gardes)
+- Tester le mouvement de la Cour (2 cartes Roi)
 - Verifier la victoire (Roi/Couronne dans chateau)
+- Tester le pouvoir du Fou (cartes joker)
 - Ameliorer l'UI
