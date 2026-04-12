@@ -9,33 +9,40 @@ class PlayerTurnState {
     }
 
     onEnteringState(args, isCurrentPlayerActive) {
-        this.bga.statusBar.setTitle(isCurrentPlayerActive ?
-            _('${you} must play cards or use a power') :
-            _('${actplayer} must play cards or use a power')
-        );
+        // Update board with latest pieces
+        this.game.placePieces(args.pieces);
 
-        if (isCurrentPlayerActive) {
-            this.game.selectedCards = [];
-            this.game.enableCardSelection(args);
+        if (!isCurrentPlayerActive) {
+            this.bga.statusBar.setTitle(_('${actplayer} must play cards or use a power'));
+            return;
+        }
 
-            if (args.canUseWizardPower) {
-                this.bga.statusBar.addActionButton(
-                    _('Use Wizard Power'),
-                    () => this.game.showWizardTargets(args.wizardTargets),
-                    { color: 'secondary' }
-                );
-            }
+        const { playedCount, playedType, canEndTurn, playableCards, canUseWizardPower, wizardTargets } = args;
 
-            this.bga.statusBar.addActionButton(
-                _('Play selected cards'),
-                () => this.game.playSelectedCards(),
-                { id: 'btn_play', color: 'primary' }
-            );
+        if (playedCount > 0) {
+            this.bga.statusBar.setTitle(_('${you} may play another ${type} card or end your turn').replace('${type}', playedType));
+        } else {
+            this.bga.statusBar.setTitle(_('${you} must play a card or use a power'));
+        }
+
+        // Render hand with playable highlighting
+        this.game.renderHand(args.hand, playableCards);
+
+        // Add action buttons
+        if (canEndTurn) {
+            this.bga.statusBar.addActionButton(_('End turn'), () => {
+                this.bga.actions.performAction('actEndTurn');
+            }, { color: 'primary' });
+        }
+
+        if (canUseWizardPower) {
+            this.bga.statusBar.addActionButton(_('Use Wizard Power'), () => {
+                this.game.showWizardTargets(wizardTargets);
+            }, { color: 'secondary' });
         }
     }
 
     onLeavingState() {
-        this.game.clearSelection();
     }
 }
 
@@ -43,7 +50,7 @@ export class Game {
     constructor(bga) {
         console.log('visiteroyale constructor');
         this.bga = bga;
-        this.selectedCards = [];
+        this.currentGuardCardId = null;
 
         this.playerTurn = new PlayerTurnState(this, bga);
         this.bga.states.register('PlayerTurn', this.playerTurn);
@@ -53,31 +60,39 @@ export class Game {
         console.log('Starting game setup', gamedatas);
         this.gamedatas = gamedatas;
 
-        // Build board
         this.buildBoard();
-
-        // Place pieces
         this.placePieces(gamedatas.pieces);
-
-        // Place crown
         this.placeCrown(gamedatas.crown_position, gamedatas.crown_side);
+        this.renderHand(gamedatas.hand, {});
 
-        // Render hand
-        this.renderHand(gamedatas.hand);
-
-        // Setup notifications
         this.setupNotifications();
 
         console.log('Ending game setup');
     }
 
     buildBoard() {
+        const labels = [];
+        for (let i = 0; i <= 18; i++) {
+            let label = '';
+            if (i <= 1) label = 'C';
+            else if (i === 9) label = 'F';
+            else if (i >= 17) label = 'C';
+            else label = i;
+            labels.push(label);
+        }
+
         const boardHtml = `
             <div id="vr-board-container">
+                <div id="vr-info-bar">
+                    <span id="vr-deck-info">Deck: ${this.gamedatas.deck_count} | Discard: ${this.gamedatas.discard_count}</span>
+                </div>
                 <div id="vr-crown-track">
-                    ${Array.from({length: 19}, (_, i) =>
-                        `<div class="vr-crown-space" data-pos="${i}" id="crown-space-${i}"></div>`
-                    ).join('')}
+                    ${Array.from({length: 19}, (_, i) => {
+                        let cls = 'vr-crown-space';
+                        if (i <= 1) cls += ' vr-castle-green';
+                        else if (i >= 17) cls += ' vr-castle-red';
+                        return `<div class="${cls}" data-pos="${i}" id="crown-space-${i}"></div>`;
+                    }).join('')}
                 </div>
                 <div id="vr-board">
                     ${Array.from({length: 19}, (_, i) => {
@@ -87,19 +102,33 @@ export class Game {
                         else if (i === 9) cls += ' vr-fountain';
                         else if (i <= 16) cls += ' vr-duchy-red';
                         else cls += ' vr-castle vr-castle-red';
-                        return `<div class="${cls}" data-pos="${i}" id="board-space-${i}"></div>`;
+                        return `<div class="${cls}" data-pos="${i}" id="board-space-${i}"><span class="vr-pos-label">${labels[i]}</span></div>`;
                     }).join('')}
                 </div>
                 <div id="vr-hand-container">
                     <div id="vr-hand"></div>
                 </div>
+                <div id="vr-guard-choice" style="display:none;">
+                    <button id="vr-guard1-btn" class="bgabutton bgabutton_blue">Guard 1 (left)</button>
+                    <button id="vr-guard2-btn" class="bgabutton bgabutton_blue">Guard 2 (right)</button>
+                    <button id="vr-guard-both-btn" class="bgabutton bgabutton_gray" style="display:none;">Both guards 1 each</button>
+                    <button id="vr-guard-cancel-btn" class="bgabutton bgabutton_red">Cancel</button>
+                </div>
+                <div id="vr-court-move" style="display:none;">
+                    <button id="vr-court-btn" class="bgabutton bgabutton_blue">Move entire Court (2 King cards)</button>
+                </div>
             </div>
         `;
         this.bga.gameArea.getElement().insertAdjacentHTML('beforeend', boardHtml);
+
+        // Guard choice handlers
+        document.getElementById('vr-guard1-btn').addEventListener('click', () => this.playGuardChoice(2));
+        document.getElementById('vr-guard2-btn').addEventListener('click', () => this.playGuardChoice(3));
+        document.getElementById('vr-guard-both-btn').addEventListener('click', () => this.playGuardBoth());
+        document.getElementById('vr-guard-cancel-btn').addEventListener('click', () => this.hideGuardChoice());
     }
 
     placePieces(pieces) {
-        // Remove existing piece elements
         document.querySelectorAll('.vr-piece').forEach(el => el.remove());
 
         Object.values(pieces).forEach(piece => {
@@ -107,6 +136,7 @@ export class Game {
             pieceEl.id = `piece-${piece.piece_id}`;
             pieceEl.className = `vr-piece vr-piece-${piece.piece_type}`;
             pieceEl.textContent = this.getPieceLabel(piece.piece_type);
+            pieceEl.title = piece.piece_type;
             const space = document.getElementById(`board-space-${piece.position}`);
             if (space) space.appendChild(pieceEl);
         });
@@ -119,100 +149,121 @@ export class Game {
 
     placeCrown(position, side) {
         let crownEl = document.getElementById('vr-crown');
-        if (!crownEl) {
-            crownEl = document.createElement('div');
-            crownEl.id = 'vr-crown';
-            crownEl.className = 'vr-crown';
-        }
-        crownEl.textContent = side === 1 ? '\u2655' : '\u2654';
+        if (crownEl) crownEl.remove();
+
+        crownEl = document.createElement('div');
+        crownEl.id = 'vr-crown';
         crownEl.className = `vr-crown vr-crown-${side === 1 ? 'big' : 'small'}`;
+        crownEl.textContent = side === 1 ? '\u2655' : '\u2654';
         const space = document.getElementById(`crown-space-${position}`);
         if (space) space.appendChild(crownEl);
     }
 
-    renderHand(hand) {
+    renderHand(hand, playableCards) {
         const container = document.getElementById('vr-hand');
         if (!container) return;
         container.innerHTML = '';
+        const playableIds = playableCards ? Object.keys(playableCards).map(Number) : [];
 
         Object.values(hand).forEach(card => {
             const cardEl = document.createElement('div');
-            cardEl.className = `vr-card vr-card-${card.card_type}`;
+            const isPlayable = playableIds.includes(parseInt(card.card_id));
+            cardEl.className = `vr-card vr-card-${card.card_type}${isPlayable ? '' : ' vr-card-disabled'}`;
             cardEl.dataset.cardId = card.card_id;
             cardEl.dataset.cardType = card.card_type;
+            cardEl.dataset.cardSubtype = card.card_subtype || '';
 
             let label = card.card_type.charAt(0).toUpperCase() + card.card_type.slice(1);
-            let valueLabel = card.card_subtype === 'gflank' ? 'F' :
-                             card.card_subtype === 'jM' ? 'M' :
+            let valueLabel = card.card_subtype === 'gflank' ? 'Flank' :
+                             card.card_subtype === 'jM' ? 'Mid' :
+                             card.card_subtype === 'g1' ? '1' :
+                             card.card_subtype === 'g11' ? '1+1' :
                              card.card_value;
-            cardEl.textContent = `${label} ${valueLabel}`;
+            cardEl.innerHTML = `<div class="vr-card-type">${label}</div><div class="vr-card-value">${valueLabel}</div>`;
 
-            cardEl.addEventListener('click', () => this.toggleCardSelection(card.card_id, card.card_type));
+            if (isPlayable) {
+                cardEl.addEventListener('click', () => this.onCardClick(card));
+            }
             container.appendChild(cardEl);
         });
     }
 
-    toggleCardSelection(cardId, cardType) {
-        const idx = this.selectedCards.indexOf(cardId);
-        if (idx >= 0) {
-            this.selectedCards.splice(idx, 1);
-        } else {
-            // Only allow same type
-            if (this.selectedCards.length > 0) {
-                const firstEl = document.querySelector(`[data-card-id="${this.selectedCards[0]}"]`);
-                if (firstEl && firstEl.dataset.cardType !== cardType) {
-                    return; // different type, ignore
-                }
-            }
-            this.selectedCards.push(cardId);
+    onCardClick(card) {
+        const type = card.card_type;
+        const subtype = card.card_subtype || '';
+
+        if (type === 'guard' && (subtype === 'g1' || subtype === 'g11')) {
+            // Show guard choice UI
+            this.showGuardChoice(card.card_id, subtype);
+            return;
         }
-        // Update visual selection
-        document.querySelectorAll('.vr-card').forEach(el => {
-            el.classList.toggle('vr-selected', this.selectedCards.includes(parseInt(el.dataset.cardId)));
+
+        if (type === 'king') {
+            // Check if player wants to do Court move (2 king cards)
+            // For now, just play single king card
+            this.bga.actions.performAction('actPlayCard', { card_id: parseInt(card.card_id) });
+            return;
+        }
+
+        // Wizard, Jester, Guard flanking: play directly
+        this.bga.actions.performAction('actPlayCard', { card_id: parseInt(card.card_id) });
+    }
+
+    showGuardChoice(cardId, subtype) {
+        this.currentGuardCardId = cardId;
+        const panel = document.getElementById('vr-guard-choice');
+        panel.style.display = 'flex';
+
+        const bothBtn = document.getElementById('vr-guard-both-btn');
+        bothBtn.style.display = (subtype === 'g11') ? 'inline-block' : 'none';
+    }
+
+    hideGuardChoice() {
+        document.getElementById('vr-guard-choice').style.display = 'none';
+        this.currentGuardCardId = null;
+    }
+
+    playGuardChoice(guardId) {
+        if (this.currentGuardCardId === null) return;
+        this.bga.actions.performAction('actPlayGuardChoice', {
+            card_id: parseInt(this.currentGuardCardId),
+            guardId: guardId,
         });
+        this.hideGuardChoice();
     }
 
-    enableCardSelection(args) {
-        // Cards are already clickable from renderHand
-    }
-
-    clearSelection() {
-        this.selectedCards = [];
-        document.querySelectorAll('.vr-card.vr-selected').forEach(el => el.classList.remove('vr-selected'));
-    }
-
-    playSelectedCards() {
-        if (this.selectedCards.length === 0) return;
-
-        this.bga.actions.performAction('actPlayCards', {
-            cardIdsJson: JSON.stringify(this.selectedCards),
+    playGuardBoth() {
+        if (this.currentGuardCardId === null) return;
+        this.bga.actions.performAction('actPlayGuardBoth', {
+            card_id: parseInt(this.currentGuardCardId),
         });
+        this.hideGuardChoice();
     }
 
     showWizardTargets(targets) {
-        if (targets.length === 1) {
-            this.bga.actions.performAction('actUseWizardPower', {
-                targetPieceId: targets[0],
-            });
-        } else {
-            // Show choice buttons
-            targets.forEach(t => {
-                const labels = { 1: 'King', 2: 'Guard 1', 3: 'Guard 2' };
-                this.bga.statusBar.addActionButton(
-                    _('Summon ${target}').replace('${target}', labels[t] || t),
-                    () => this.bga.actions.performAction('actUseWizardPower', { targetPieceId: t })
-                );
-            });
-        }
+        const labels = { 1: 'King', 2: 'Guard 1', 3: 'Guard 2' };
+        targets.forEach(t => {
+            this.bga.statusBar.addActionButton(
+                _('Summon ${target}').replace('${target}', labels[t] || t),
+                () => this.bga.actions.performAction('actUseWizardPower', { targetPieceId: t })
+            );
+        });
     }
 
     setupNotifications() {
         this.bga.notifications.setupPromiseNotifications({});
     }
 
-    async notif_cardsPlayed(args) {
-        // Refresh pieces display
-        // Pieces update will come from state change
+    async notif_cardPlayed(args) {
+        this.placePieces(args.pieces);
+    }
+
+    async notif_courtMoved(args) {
+        this.placePieces(args.pieces);
+    }
+
+    async notif_guardMoved(args) {
+        this.placePieces(args.pieces);
     }
 
     async notif_wizardPower(args) {
@@ -224,14 +275,14 @@ export class Game {
     }
 
     async notif_cardsDrawn(args) {
-        this.renderHand(args.hand);
+        this.renderHand(args.hand, {});
     }
 
     async notif_deckReshuffled(args) {
-        // Visual indicator could be added
     }
 
     async notif_deckUpdated(args) {
-        // Update deck count display if we add one
+        const info = document.getElementById('vr-deck-info');
+        if (info) info.textContent = `Deck: ${args.deck_count}`;
     }
 }

@@ -180,3 +180,49 @@
     background: #fff3e0;
     border-color: #ff9800;
 }
+
+.vr-card-disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.vr-card-type {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.vr-card-value {
+    font-size: 22px;
+    margin-top: 4px;
+}
+
+.vr-pos-label {
+    position: absolute;
+    bottom: 2px;
+    right: 4px;
+    font-size: 9px;
+    color: #999;
+}
+
+/* Info bar */
+#vr-info-bar {
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 4px;
+}
+
+/* Guard choice panel */
+#vr-guard-choice {
+    gap: 8px;
+    margin-top: 12px;
+    justify-content: center;
+    align-items: center;
+}
+
+/* Court move panel */
+#vr-court-move {
+    margin-top: 8px;
+    text-align: center;
+}

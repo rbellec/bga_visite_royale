@@ -22,6 +22,11 @@ class NextPlayer extends GameState
     {
         $this->game->giveExtraTime($activePlayerId);
         $this->game->activeNextPlayer();
+
+        // Reset turn tracking for next player
+        $this->game->bga->globals->set('played_type', '');
+        $this->game->bga->globals->set('played_count', 0);
+
         return PlayerTurn::class;
     }
 }

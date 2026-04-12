@@ -66,6 +66,7 @@ class Game extends Table
             'crown_position' => 10,
             'crown_side' => 11,
             'deck_reshuffles' => 12,
+            'played_count' => 13,
         ]);
     }
 
@@ -99,6 +100,8 @@ class Game extends Table
         $this->bga->globals->set('crown_position', self::POS_FOUNTAIN);
         $this->bga->globals->set('crown_side', self::CROWN_BIG);
         $this->bga->globals->set('deck_reshuffles', 0);
+        $this->bga->globals->set('played_type', '');
+        $this->bga->globals->set('played_count', 0);
 
         // First player: the one with the Wizard in their duchy
         $wizardPos = $this->getPiecePosition(self::CHAR_WIZARD);
