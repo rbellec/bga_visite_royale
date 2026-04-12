@@ -17,7 +17,8 @@ class PlayerTurnState {
             return;
         }
 
-        const { playedCount, playedType, canEndTurn, playableCards, canUseWizardPower, wizardTargets } = args;
+        const { playedCount, playedType, canEndTurn, playableCards, canUseWizardPower, wizardTargets, jesterPowerActive } = args;
+        this.game.jesterPowerActive = jesterPowerActive;
 
         if (playedCount > 0) {
             this.bga.statusBar.setTitle(_('${you} may play another ${type} card or end your turn').replace('${type}', playedType));
@@ -66,6 +67,7 @@ export class Game {
 
         // Render hand with playable info from initial state args if available
         const stateArgs = gamedatas.gamestate?.args;
+        this.jesterPowerActive = stateArgs?.jesterPowerActive || false;
         this.renderHand(gamedatas.hand, stateArgs?.playableCards || {});
 
         this.setupNotifications();
@@ -117,6 +119,14 @@ export class Game {
                     <button id="vr-guard-both-btn" class="bgabutton bgabutton_gray" style="display:none;">Both guards 1 each</button>
                     <button id="vr-guard-cancel-btn" class="bgabutton bgabutton_red">Cancel</button>
                 </div>
+                <div id="vr-jester-as" style="display:none;">
+                    <span>Use Jester card as:</span>
+                    <button id="vr-jester-as-king" class="bgabutton bgabutton_blue">King</button>
+                    <button id="vr-jester-as-wizard" class="bgabutton bgabutton_blue">Wizard</button>
+                    <button id="vr-jester-as-guard1" class="bgabutton bgabutton_blue">Guard 1</button>
+                    <button id="vr-jester-as-guard2" class="bgabutton bgabutton_blue">Guard 2</button>
+                    <button id="vr-jester-as-cancel" class="bgabutton bgabutton_red">Cancel</button>
+                </div>
                 <div id="vr-court-move" style="display:none;">
                     <button id="vr-court-single-btn" class="bgabutton bgabutton_blue">Move King only (1 card)</button>
                     <button id="vr-court-btn" class="bgabutton bgabutton_blue">Move entire Court (2 cards)</button>
@@ -131,6 +141,13 @@ export class Game {
         document.getElementById('vr-guard2-btn').addEventListener('click', () => this.playGuardChoice(3));
         document.getElementById('vr-guard-both-btn').addEventListener('click', () => this.playGuardBoth());
         document.getElementById('vr-guard-cancel-btn').addEventListener('click', () => this.hideGuardChoice());
+
+        // Jester-as handlers
+        document.getElementById('vr-jester-as-king').addEventListener('click', () => this.playJesterAs('king', 0));
+        document.getElementById('vr-jester-as-wizard').addEventListener('click', () => this.playJesterAs('wizard', 0));
+        document.getElementById('vr-jester-as-guard1').addEventListener('click', () => this.playJesterAs('guard', 2));
+        document.getElementById('vr-jester-as-guard2').addEventListener('click', () => this.playJesterAs('guard', 3));
+        document.getElementById('vr-jester-as-cancel').addEventListener('click', () => this.hideJesterAs());
 
         // Court move handlers
         document.getElementById('vr-court-single-btn').addEventListener('click', () => this.playCourtSingle());
@@ -225,6 +242,12 @@ export class Game {
             return;
         }
 
+        // Jester with power active: show character choice
+        if (type === 'jester' && this.jesterPowerActive && (subtype !== 'jM')) {
+            this.showJesterAs(card.card_id);
+            return;
+        }
+
         // Wizard, Jester, Guard flanking: play directly
         this.bga.actions.performAction('actPlayCard', { card_id: parseInt(card.card_id) });
     }
@@ -287,6 +310,26 @@ export class Game {
             card_id2: ids[0],
         });
         this.hideCourtChoice();
+    }
+
+    showJesterAs(cardId) {
+        this.currentJesterCardId = cardId;
+        document.getElementById('vr-jester-as').style.display = 'flex';
+    }
+
+    hideJesterAs() {
+        document.getElementById('vr-jester-as').style.display = 'none';
+        this.currentJesterCardId = null;
+    }
+
+    playJesterAs(asType, guardId) {
+        if (this.currentJesterCardId === null) return;
+        this.bga.actions.performAction('actPlayJesterAs', {
+            card_id: parseInt(this.currentJesterCardId),
+            asType: asType,
+            guardId: guardId,
+        });
+        this.hideJesterAs();
     }
 
     showWizardTargets(targets) {

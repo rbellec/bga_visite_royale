@@ -201,4 +201,30 @@ Ce fichier documente les etapes, difficultes et decisions prises pendant le deve
 ### Methode de test
 - Pour tester les conditions de victoire sans jouer 15+ tours, ajouter un `actDebugSetPosition` temporaire
 - Le `gameui.ajaxcall` appelle l'action PHP depuis JS pour repositionner les pieces
-- **Pour le skill** : documenter cette technique de debug action pour tester les end-game rapidement
+- Aussi utilise `actDebugGetJester` pour swapper une carte en main contre un Jester du deck
+- **Pour le skill** : documenter cette technique de debug action pour tester les end-game et pouvoirs rapidement
+
+---
+
+## Etape 7 : Pouvoir du Fou (2026-04-12)
+
+### Ce qui a ete implemente
+- **Condition** : `isJesterPowerActive` — le Fou doit etre entre le chateau du joueur et le Roi (strictement)
+- **canPlayCard** : quand le pouvoir est actif, les cartes Jester verifient si elles peuvent deplacer un des personnages (King, Wizard, Guard)
+- **getArgs** : les cartes Jester ne sont plus filtrees quand `playedType` est different (elles agissent comme joker)
+- **actPlayJesterAs(card_id, asType, guardId)** : nouvelle action pour jouer une carte Jester comme un type choisi
+- **UI** : panneau de choix "Use Jester card as: King / Wizard / Guard 1 / Guard 2 / Cancel"
+
+### Ce qui a ete teste
+- Jester a pos 5, King a pos 11 → pouvoir actif pour le vert ✓
+- Clic sur Jester → panneau de choix apparait ✓
+- Jester(2) joue comme Wizard → Wizard se deplace de 2 cases ✓
+- Type effectif = wizard → 2e Jester aussi jouable comme wizard ✓
+- Cartes Jester restent enabled meme quand `playedType` = 'wizard' ✓
+
+### Toutes les mecaniques implementees et testees
+- Cartes : King, Guard g1/g11/gflank, Wizard, Jester ✓
+- Pouvoirs : Sorcier (invocation), Fou (joker) ✓
+- Mouvement de la Cour (2 cartes Roi) ✓
+- Victoire (Roi dans chateau) ✓
+- Flow complet du tour ✓

@@ -35,7 +35,10 @@ class PlayerTurn extends GameState
         $playableCards = [];
         foreach ($hand as $cardId => $card) {
             if ($playedCount > 0 && $card['card_type'] !== $playedType) {
-                continue;
+                // Jester power: jester cards can act as any type
+                if (!($jesterPowerActive && $card['card_type'] === 'jester')) {
+                    continue;
+                }
             }
             if ($this->canPlayCard($card, $playerId, $pieces, $direction, $jesterPowerActive)) {
                 $playableCards[$cardId] = $card;
@@ -257,6 +260,80 @@ class PlayerTurn extends GameState
     }
 
     #[PossibleAction]
+    public function actPlayJesterAs(int $card_id, string $asType, int $guardId, int $activePlayerId): string
+    {
+        $hand = $this->game->getPlayerHand($activePlayerId);
+        if (!isset($hand[$card_id])) {
+            throw new UserException('Card not in your hand');
+        }
+        $card = $hand[$card_id];
+        if ($card['card_type'] !== 'jester') {
+            throw new UserException('Not a Jester card');
+        }
+
+        $pieces = $this->game->getAllPiecePositions();
+        $direction = $this->game->getPlayerDirection($activePlayerId);
+        $playedCount = (int)($this->game->bga->globals->get('played_count') ?? 0);
+        $playedType = (string)($this->game->bga->globals->get('played_type') ?? '');
+
+        if (!$this->isJesterPowerActive($activePlayerId, $pieces)) {
+            throw new UserException('Jester power is not active');
+        }
+
+        $value = (int)$card['card_value'];
+
+        switch ($asType) {
+            case 'king':
+                $kingPos = (int)$pieces[Game::CHAR_KING]['position'];
+                $newPos = $kingPos + $direction;
+                if ($newPos < Game::POS_MIN || $newPos > Game::POS_MAX ||
+                    !$this->game->isKingBetweenGuards($newPos, (int)$pieces[Game::CHAR_GUARD1]['position'], (int)$pieces[Game::CHAR_GUARD2]['position'])) {
+                    throw new UserException('King cannot move there');
+                }
+                $this->game->movePiece(Game::CHAR_KING, $newPos);
+                break;
+            case 'wizard':
+                $wizPos = (int)$pieces[Game::CHAR_WIZARD]['position'];
+                $newPos = max(Game::POS_MIN, min(Game::POS_MAX, $wizPos + ($direction * $value)));
+                $this->game->movePiece(Game::CHAR_WIZARD, $newPos);
+                break;
+            case 'guard':
+                if ($guardId !== Game::CHAR_GUARD1 && $guardId !== Game::CHAR_GUARD2) {
+                    throw new UserException('Invalid guard');
+                }
+                $guardPos = (int)$pieces[$guardId]['position'];
+                $newPos = $guardPos + ($direction * $value);
+                if (!$this->isValidGuardMove($guardId, $newPos, $pieces)) {
+                    throw new UserException('Guard cannot move there');
+                }
+                $this->game->movePiece($guardId, $newPos);
+                break;
+            default:
+                throw new UserException('Invalid target type');
+        }
+
+        $this->game->discardCard($card_id);
+        $effectiveType = $asType;
+        if ($playedCount > 0 && $playedType !== '' && $playedType !== $effectiveType) {
+            $effectiveType = $playedType;
+        }
+        $this->game->bga->globals->set('played_type', $effectiveType);
+        $this->game->bga->globals->set('played_count', $playedCount + 1);
+
+        $this->game->bga->notify->all('cardPlayed', clienttranslate('${player_name} plays a Jester card as ${as_type} (${value_name})'), [
+            'player_id' => $activePlayerId,
+            'player_name' => $this->game->getPlayerNameById($activePlayerId),
+            'card_type' => 'jester',
+            'as_type' => $asType,
+            'card_id' => $card_id,
+            'value_name' => (string)$value,
+            'pieces' => $this->game->getAllPiecePositions(),
+        ]);
+
+        return PlayerTurn::class;
+    }
+
+    #[PossibleAction]
     public function actUseWizardPower(int $targetPieceId, int $activePlayerId): string
     {
         $playedCount = (int)($this->game->bga->globals->get('played_count') ?? 0);
@@ -333,6 +410,11 @@ class PlayerTurn extends GameState
         $type = $card['card_type'];
         $value = (int)$card['card_value'];
         $subtype = $card['card_subtype'] ?? '';
+
+        // Jester power: jester cards can move any character
+        if ($jesterPower && $type === 'jester' && $subtype !== 'jM') {
+            return $this->canJesterActAs($value, $pieces, $direction);
+        }
 
         switch ($type) {
             case 'king':
@@ -432,6 +514,32 @@ class PlayerTurn extends GameState
             $targets[] = Game::CHAR_GUARD2;
         }
         return $targets;
+    }
+
+    private function canJesterActAs(int $value, array $pieces, int $direction): bool
+    {
+        // Can it move King?
+        $kingPos = (int)$pieces[Game::CHAR_KING]['position'];
+        for ($i = 1; $i <= $value; $i++) {
+            $newPos = $kingPos + ($direction * $i);
+            if ($newPos >= Game::POS_MIN && $newPos <= Game::POS_MAX &&
+                $this->game->isKingBetweenGuards($newPos, (int)$pieces[Game::CHAR_GUARD1]['position'], (int)$pieces[Game::CHAR_GUARD2]['position'])) {
+                return true;
+            }
+        }
+        // Can it move Wizard?
+        $newPos = (int)$pieces[Game::CHAR_WIZARD]['position'] + ($direction * $value);
+        if ($newPos >= Game::POS_MIN && $newPos <= Game::POS_MAX) return true;
+        // Can it move a Guard? (as g1 — one guard, $value steps)
+        $g1Pos = (int)$pieces[Game::CHAR_GUARD1]['position'];
+        $g2Pos = (int)$pieces[Game::CHAR_GUARD2]['position'];
+        $newG1 = $g1Pos + ($direction * $value);
+        if ($newG1 >= Game::POS_MIN && $newG1 <= Game::POS_MAX && $newG1 !== $kingPos &&
+            $this->game->isKingBetweenGuards($kingPos, $newG1, $g2Pos)) return true;
+        $newG2 = $g2Pos + ($direction * $value);
+        if ($newG2 >= Game::POS_MIN && $newG2 <= Game::POS_MAX && $newG2 !== $kingPos &&
+            $this->game->isKingBetweenGuards($kingPos, $g1Pos, $newG2)) return true;
+        return false;
     }
 
     private function isJesterPowerActive(int $playerId, array $pieces): bool

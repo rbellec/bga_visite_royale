@@ -221,6 +221,14 @@
     align-items: center;
 }
 
+/* Jester-as panel */
+#vr-jester-as {
+    gap: 8px;
+    margin-top: 12px;
+    justify-content: center;
+    align-items: center;
+}
+
 /* Court move panel */
 #vr-court-move {
     gap: 8px;
