@@ -60,14 +60,31 @@ class Game extends Table
         parent::__construct();
     }
 
+    // Played type constants (for turn tracking)
+    public const PLAYED_NONE = 0;
+    public const PLAYED_KING = 1;
+    public const PLAYED_GUARD = 2;
+    public const PLAYED_WIZARD = 3;
+    public const PLAYED_JESTER = 4;
+
+    public const TYPE_TO_PLAYED = [
+        'king' => self::PLAYED_KING,
+        'guard' => self::PLAYED_GUARD,
+        'wizard' => self::PLAYED_WIZARD,
+        'jester' => self::PLAYED_JESTER,
+    ];
+
+    public const PLAYED_TO_TYPE = [
+        self::PLAYED_KING => 'king',
+        self::PLAYED_GUARD => 'guard',
+        self::PLAYED_WIZARD => 'wizard',
+        self::PLAYED_JESTER => 'jester',
+    ];
+
     protected function initTable(): void
     {
-        $this->initGameStateLabels([
-            'crown_position' => 10,
-            'crown_side' => 11,
-            'deck_reshuffles' => 12,
-            'played_count' => 13,
-        ]);
+        // Using $this->bga->globals for all state (supports any type, JSON-serialized)
+        // NOT using initGameStateLabels (legacy, int-only)
     }
 
     protected function setupNewGame($players, $options = []): mixed

@@ -26,19 +26,17 @@ class PlayerTurn extends GameState
         $pieces = $this->game->getAllPiecePositions();
         $direction = $this->game->getPlayerDirection($playerId);
 
-        $playedType = $this->game->bga->globals->get('played_type');
-        $playedCount = (int)$this->game->bga->globals->get('played_count');
+        $playedType = (string)($this->game->bga->globals->get('played_type') ?? '');
+        $playedCount = (int)($this->game->bga->globals->get('played_count') ?? 0);
 
         $canUseWizardPower = ($playedCount === 0) && $this->canUseWizardPower($playerId, $pieces);
         $jesterPowerActive = $this->isJesterPowerActive($playerId, $pieces);
 
-        // Build playable cards list
         $playableCards = [];
         foreach ($hand as $cardId => $card) {
             if ($playedCount > 0 && $card['card_type'] !== $playedType) {
-                continue; // Must play same type as first card
+                continue;
             }
-            // Check if the card can actually be played (movement is possible)
             if ($this->canPlayCard($card, $playerId, $pieces, $direction, $jesterPowerActive)) {
                 $playableCards[$cardId] = $card;
             }
@@ -69,31 +67,24 @@ class PlayerTurn extends GameState
         $card = $hand[$card_id];
         $pieces = $this->game->getAllPiecePositions();
         $direction = $this->game->getPlayerDirection($activePlayerId);
-        $playedType = $this->game->bga->globals->get('played_type');
-        $playedCount = (int)$this->game->bga->globals->get('played_count');
+        $playedType = (string)($this->game->bga->globals->get('played_type') ?? '');
+        $playedCount = (int)($this->game->bga->globals->get('played_count') ?? 0);
 
-        // Must play same type if already played
         if ($playedCount > 0 && $card['card_type'] !== $playedType) {
             throw new UserException('You must play a card of the same type');
         }
 
         $jesterPowerActive = $this->isJesterPowerActive($activePlayerId, $pieces);
-
         if (!$this->canPlayCard($card, $activePlayerId, $pieces, $direction, $jesterPowerActive)) {
             throw new UserException('This card cannot be played right now');
         }
 
-        // Apply the card movement
         $this->applyCardMovement($card, $activePlayerId, $pieces, $direction);
-
-        // Discard the card
         $this->game->discardCard($card_id);
 
-        // Track played type
         $this->game->bga->globals->set('played_type', $card['card_type']);
         $this->game->bga->globals->set('played_count', $playedCount + 1);
 
-        // Notify
         $valueName = $this->getCardValueName($card);
         $this->game->bga->notify->all('cardPlayed', clienttranslate('${player_name} plays a ${card_type} card (${value_name})'), [
             'player_id' => $activePlayerId,
@@ -104,14 +95,12 @@ class PlayerTurn extends GameState
             'pieces' => $this->game->getAllPiecePositions(),
         ]);
 
-        // Stay in PlayerTurn so player can play more cards of same type
         return PlayerTurn::class;
     }
 
     #[PossibleAction]
     public function actPlayCourtMove(int $card_id1, int $card_id2, int $activePlayerId): string
     {
-        // Privilege du Roi: play 2 King cards to move entire Court 1 space
         $hand = $this->game->getPlayerHand($activePlayerId);
         if (!isset($hand[$card_id1]) || !isset($hand[$card_id2])) {
             throw new UserException('Cards not in your hand');
@@ -120,8 +109,8 @@ class PlayerTurn extends GameState
             throw new UserException('Both cards must be King cards');
         }
 
-        $playedCount = (int)$this->game->bga->globals->get('played_count');
-        $playedType = $this->game->bga->globals->get('played_type');
+        $playedCount = (int)($this->game->bga->globals->get('played_count') ?? 0);
+        $playedType = (string)($this->game->bga->globals->get('played_type') ?? '');
         if ($playedCount > 0 && $playedType !== 'king') {
             throw new UserException('You must play King cards');
         }
@@ -137,7 +126,6 @@ class PlayerTurn extends GameState
         $newG1 = $g1Pos + $direction;
         $newG2 = $g2Pos + $direction;
 
-        // Validate bounds
         if ($newKing < Game::POS_MIN || $newKing > Game::POS_MAX ||
             $newG1 < Game::POS_MIN || $newG1 > Game::POS_MAX ||
             $newG2 < Game::POS_MIN || $newG2 > Game::POS_MAX) {
@@ -147,7 +135,6 @@ class PlayerTurn extends GameState
         $this->game->movePiece(Game::CHAR_KING, $newKing);
         $this->game->movePiece(Game::CHAR_GUARD1, $newG1);
         $this->game->movePiece(Game::CHAR_GUARD2, $newG2);
-
         $this->game->discardCard($card_id1);
         $this->game->discardCard($card_id2);
 
@@ -166,8 +153,6 @@ class PlayerTurn extends GameState
     #[PossibleAction]
     public function actPlayGuardChoice(int $card_id, int $guardId, int $activePlayerId): string
     {
-        // For Guard g1 card: choose which guard to move
-        // For Guard g11 card: choose which guard(s) to move and how
         $hand = $this->game->getPlayerHand($activePlayerId);
         if (!isset($hand[$card_id])) {
             throw new UserException('Card not in your hand');
@@ -176,37 +161,24 @@ class PlayerTurn extends GameState
         if ($card['card_type'] !== 'guard') {
             throw new UserException('Not a Guard card');
         }
-
-        $pieces = $this->game->getAllPiecePositions();
-        $direction = $this->game->getPlayerDirection($activePlayerId);
-        $playedCount = (int)$this->game->bga->globals->get('played_count');
-
         if ($guardId !== Game::CHAR_GUARD1 && $guardId !== Game::CHAR_GUARD2) {
             throw new UserException('Invalid guard');
         }
 
+        $pieces = $this->game->getAllPiecePositions();
+        $direction = $this->game->getPlayerDirection($activePlayerId);
+        $playedCount = (int)($this->game->bga->globals->get('played_count') ?? 0);
         $subtype = $card['card_subtype'] ?? '';
+        $steps = ($subtype === 'g11') ? 2 : 1;
 
-        if ($subtype === 'g1') {
-            // Move chosen guard 1 space
-            $guardPos = (int)$pieces[$guardId]['position'];
-            $newPos = $guardPos + $direction;
-            if (!$this->isValidGuardMove($guardId, $newPos, $pieces)) {
-                throw new UserException('This guard cannot move there');
-            }
-            $this->game->movePiece($guardId, $newPos);
-
-        } elseif ($subtype === 'g11') {
-            // Move chosen guard 2 spaces
-            $guardPos = (int)$pieces[$guardId]['position'];
-            $newPos = $guardPos + ($direction * 2);
-            if (!$this->isValidGuardMove($guardId, $newPos, $pieces)) {
-                throw new UserException('This guard cannot move there');
-            }
-            $this->game->movePiece($guardId, $newPos);
+        $guardPos = (int)$pieces[$guardId]['position'];
+        $newPos = $guardPos + ($direction * $steps);
+        if (!$this->isValidGuardMove($guardId, $newPos, $pieces)) {
+            throw new UserException('This guard cannot move there');
         }
-
+        $this->game->movePiece($guardId, $newPos);
         $this->game->discardCard($card_id);
+
         $this->game->bga->globals->set('played_type', 'guard');
         $this->game->bga->globals->set('played_count', $playedCount + 1);
 
@@ -222,7 +194,6 @@ class PlayerTurn extends GameState
     #[PossibleAction]
     public function actPlayGuardBoth(int $card_id, int $activePlayerId): string
     {
-        // For Guard g11: move both guards 1 space each
         $hand = $this->game->getPlayerHand($activePlayerId);
         if (!isset($hand[$card_id])) {
             throw new UserException('Card not in your hand');
@@ -234,15 +205,14 @@ class PlayerTurn extends GameState
 
         $pieces = $this->game->getAllPiecePositions();
         $direction = $this->game->getPlayerDirection($activePlayerId);
-        $playedCount = (int)$this->game->bga->globals->get('played_count');
+        $playedCount = (int)($this->game->bga->globals->get('played_count') ?? 0);
 
         $g1Pos = (int)$pieces[Game::CHAR_GUARD1]['position'];
         $g2Pos = (int)$pieces[Game::CHAR_GUARD2]['position'];
+        $kingPos = (int)$pieces[Game::CHAR_KING]['position'];
         $newG1 = $g1Pos + $direction;
         $newG2 = $g2Pos + $direction;
 
-        // Validate both moves (check bounds + king between guards)
-        $kingPos = (int)$pieces[Game::CHAR_KING]['position'];
         if ($newG1 < Game::POS_MIN || $newG1 > Game::POS_MAX ||
             $newG2 < Game::POS_MIN || $newG2 > Game::POS_MAX) {
             throw new UserException('Guards cannot move further');
@@ -253,8 +223,8 @@ class PlayerTurn extends GameState
 
         $this->game->movePiece(Game::CHAR_GUARD1, $newG1);
         $this->game->movePiece(Game::CHAR_GUARD2, $newG2);
-
         $this->game->discardCard($card_id);
+
         $this->game->bga->globals->set('played_type', 'guard');
         $this->game->bga->globals->set('played_count', $playedCount + 1);
 
@@ -270,12 +240,11 @@ class PlayerTurn extends GameState
     #[PossibleAction]
     public function actEndTurn(int $activePlayerId): string
     {
-        $playedCount = (int)$this->game->bga->globals->get('played_count');
+        $playedCount = (int)($this->game->bga->globals->get('played_count') ?? 0);
         if ($playedCount === 0) {
             throw new UserException('You must play at least one card or use a power');
         }
 
-        // Reset played tracking
         $this->game->bga->globals->set('played_type', '');
         $this->game->bga->globals->set('played_count', 0);
 
@@ -285,13 +254,12 @@ class PlayerTurn extends GameState
     #[PossibleAction]
     public function actUseWizardPower(int $targetPieceId, int $activePlayerId): string
     {
-        $playedCount = (int)$this->game->bga->globals->get('played_count');
+        $playedCount = (int)($this->game->bga->globals->get('played_count') ?? 0);
         if ($playedCount > 0) {
             throw new UserException('Cannot use Wizard power after playing cards');
         }
 
         $pieces = $this->game->getAllPiecePositions();
-
         if (!$this->canUseWizardPower($activePlayerId, $pieces)) {
             throw new UserException('Cannot use Wizard power right now');
         }
@@ -314,7 +282,6 @@ class PlayerTurn extends GameState
             'pieces' => $this->game->getAllPiecePositions(),
         ]);
 
-        // Wizard power = entire turn action, go to crown
         $this->game->bga->globals->set('played_type', '');
         $this->game->bga->globals->set('played_count', 0);
 
@@ -332,36 +299,26 @@ class PlayerTurn extends GameState
         switch ($type) {
             case 'king':
                 $kingPos = (int)$pieces[Game::CHAR_KING]['position'];
-                $newPos = $kingPos + $direction;
-                $this->game->movePiece(Game::CHAR_KING, $newPos);
+                $this->game->movePiece(Game::CHAR_KING, $kingPos + $direction);
                 break;
-
             case 'wizard':
                 $wizPos = (int)$pieces[Game::CHAR_WIZARD]['position'];
-                $newPos = $wizPos + ($direction * $value);
-                $newPos = max(Game::POS_MIN, min(Game::POS_MAX, $newPos));
-                $this->game->movePiece(Game::CHAR_WIZARD, $newPos);
+                $this->game->movePiece(Game::CHAR_WIZARD, max(Game::POS_MIN, min(Game::POS_MAX, $wizPos + ($direction * $value))));
                 break;
-
             case 'jester':
                 if ($subtype === 'jM') {
                     $this->game->movePiece(Game::CHAR_JESTER, Game::POS_FOUNTAIN);
                 } else {
-                    $jesterPos = (int)$pieces[Game::CHAR_JESTER]['position'];
-                    $newPos = $jesterPos + ($direction * $value);
-                    $newPos = max(Game::POS_MIN, min(Game::POS_MAX, $newPos));
-                    $this->game->movePiece(Game::CHAR_JESTER, $newPos);
+                    $jPos = (int)$pieces[Game::CHAR_JESTER]['position'];
+                    $this->game->movePiece(Game::CHAR_JESTER, max(Game::POS_MIN, min(Game::POS_MAX, $jPos + ($direction * $value))));
                 }
                 break;
-
             case 'guard':
                 if ($subtype === 'gflank') {
-                    // Move both guards adjacent to King
                     $kingPos = (int)$pieces[Game::CHAR_KING]['position'];
                     $this->game->movePiece(Game::CHAR_GUARD1, $kingPos - 1);
                     $this->game->movePiece(Game::CHAR_GUARD2, $kingPos + 1);
                 }
-                // g1 and g11 are handled by actPlayGuardChoice/actPlayGuardBoth
                 break;
         }
     }
@@ -377,53 +334,39 @@ class PlayerTurn extends GameState
                 $kingPos = (int)$pieces[Game::CHAR_KING]['position'];
                 $newPos = $kingPos + $direction;
                 if ($newPos < Game::POS_MIN || $newPos > Game::POS_MAX) return false;
-                $g1 = (int)$pieces[Game::CHAR_GUARD1]['position'];
-                $g2 = (int)$pieces[Game::CHAR_GUARD2]['position'];
-                return $this->game->isKingBetweenGuards($newPos, $g1, $g2);
-
+                return $this->game->isKingBetweenGuards($newPos, (int)$pieces[Game::CHAR_GUARD1]['position'], (int)$pieces[Game::CHAR_GUARD2]['position']);
             case 'wizard':
-                $wizPos = (int)$pieces[Game::CHAR_WIZARD]['position'];
-                $newPos = $wizPos + ($direction * $value);
+                $newPos = (int)$pieces[Game::CHAR_WIZARD]['position'] + ($direction * $value);
                 return $newPos >= Game::POS_MIN && $newPos <= Game::POS_MAX;
-
             case 'jester':
-                if ($subtype === 'jM') return true; // Always can move to center
-                $jPos = (int)$pieces[Game::CHAR_JESTER]['position'];
-                $newPos = $jPos + ($direction * $value);
+                if ($subtype === 'jM') return true;
+                $newPos = (int)$pieces[Game::CHAR_JESTER]['position'] + ($direction * $value);
                 return $newPos >= Game::POS_MIN && $newPos <= Game::POS_MAX;
-
             case 'guard':
                 if ($subtype === 'gflank') {
                     $kingPos = (int)$pieces[Game::CHAR_KING]['position'];
                     return ($kingPos - 1) >= Game::POS_MIN && ($kingPos + 1) <= Game::POS_MAX;
                 }
-                // g1 or g11: at least one guard must be able to move
                 $g1Pos = (int)$pieces[Game::CHAR_GUARD1]['position'];
                 $g2Pos = (int)$pieces[Game::CHAR_GUARD2]['position'];
                 $kingPos = (int)$pieces[Game::CHAR_KING]['position'];
                 $steps = ($subtype === 'g11') ? 2 : 1;
                 // Can move guard1?
                 $newG1 = $g1Pos + ($direction * $steps);
-                if ($newG1 >= Game::POS_MIN && $newG1 <= Game::POS_MAX &&
-                    $this->game->isKingBetweenGuards($kingPos, $newG1, $g2Pos) && $newG1 !== $kingPos) {
-                    return true;
-                }
+                if ($newG1 >= Game::POS_MIN && $newG1 <= Game::POS_MAX && $newG1 !== $kingPos &&
+                    $this->game->isKingBetweenGuards($kingPos, $newG1, $g2Pos)) return true;
                 // Can move guard2?
                 $newG2 = $g2Pos + ($direction * $steps);
-                if ($newG2 >= Game::POS_MIN && $newG2 <= Game::POS_MAX &&
-                    $this->game->isKingBetweenGuards($kingPos, $g1Pos, $newG2) && $newG2 !== $kingPos) {
-                    return true;
-                }
-                // For g11: can move both guards 1 space each?
+                if ($newG2 >= Game::POS_MIN && $newG2 <= Game::POS_MAX && $newG2 !== $kingPos &&
+                    $this->game->isKingBetweenGuards($kingPos, $g1Pos, $newG2)) return true;
+                // For g11: both guards 1 each?
                 if ($subtype === 'g11') {
                     $nG1 = $g1Pos + $direction;
                     $nG2 = $g2Pos + $direction;
                     if ($nG1 >= Game::POS_MIN && $nG1 <= Game::POS_MAX &&
                         $nG2 >= Game::POS_MIN && $nG2 <= Game::POS_MAX &&
-                        $this->game->isKingBetweenGuards($kingPos, $nG1, $nG2) &&
-                        $nG1 !== $kingPos && $nG2 !== $kingPos) {
-                        return true;
-                    }
+                        $nG1 !== $kingPos && $nG2 !== $kingPos &&
+                        $this->game->isKingBetweenGuards($kingPos, $nG1, $nG2)) return true;
                 }
                 return false;
         }
@@ -434,10 +377,12 @@ class PlayerTurn extends GameState
     {
         if ($newPos < Game::POS_MIN || $newPos > Game::POS_MAX) return false;
         $kingPos = (int)$pieces[Game::CHAR_KING]['position'];
-        if ($newPos === $kingPos) return false; // Guard can't be on same space as King
+        if ($newPos === $kingPos) return false;
         $otherId = ($guardId === Game::CHAR_GUARD1) ? Game::CHAR_GUARD2 : Game::CHAR_GUARD1;
         $otherPos = (int)$pieces[$otherId]['position'];
-        return $this->game->isKingBetweenGuards($kingPos, ($guardId === Game::CHAR_GUARD1 ? $newPos : $otherPos), ($guardId === Game::CHAR_GUARD2 ? $newPos : $otherPos));
+        return $this->game->isKingBetweenGuards($kingPos,
+            ($guardId === Game::CHAR_GUARD1 ? $newPos : $otherPos),
+            ($guardId === Game::CHAR_GUARD2 ? $newPos : $otherPos));
     }
 
     private function getCardValueName(array $card): string
@@ -450,34 +395,29 @@ class PlayerTurn extends GameState
         return (string)$card['card_value'];
     }
 
-    // ── Wizard & Jester powers ────────────────────────────────
+    // ── Powers ────────────────────────────────────────────────
 
     private function canUseWizardPower(int $playerId, array $pieces): bool
     {
-        $wizardPos = (int)$pieces[Game::CHAR_WIZARD]['position'];
-        $kingPos = (int)$pieces[Game::CHAR_KING]['position'];
-        $g1Pos = (int)$pieces[Game::CHAR_GUARD1]['position'];
-        $g2Pos = (int)$pieces[Game::CHAR_GUARD2]['position'];
-
-        if ($this->game->isKingBetweenGuards($wizardPos, $g1Pos, $g2Pos)) return true;
-        if ($this->game->isKingBetweenGuards($kingPos, $wizardPos, $g2Pos)) return true;
-        if ($this->game->isKingBetweenGuards($kingPos, $g1Pos, $wizardPos)) return true;
-
-        return false;
+        $w = (int)$pieces[Game::CHAR_WIZARD]['position'];
+        $k = (int)$pieces[Game::CHAR_KING]['position'];
+        $g1 = (int)$pieces[Game::CHAR_GUARD1]['position'];
+        $g2 = (int)$pieces[Game::CHAR_GUARD2]['position'];
+        return $this->game->isKingBetweenGuards($w, $g1, $g2)
+            || $this->game->isKingBetweenGuards($k, $w, $g2)
+            || $this->game->isKingBetweenGuards($k, $g1, $w);
     }
 
     private function getWizardTargets(array $pieces): array
     {
-        $wizardPos = (int)$pieces[Game::CHAR_WIZARD]['position'];
-        $kingPos = (int)$pieces[Game::CHAR_KING]['position'];
-        $g1Pos = (int)$pieces[Game::CHAR_GUARD1]['position'];
-        $g2Pos = (int)$pieces[Game::CHAR_GUARD2]['position'];
-
+        $w = (int)$pieces[Game::CHAR_WIZARD]['position'];
+        $k = (int)$pieces[Game::CHAR_KING]['position'];
+        $g1 = (int)$pieces[Game::CHAR_GUARD1]['position'];
+        $g2 = (int)$pieces[Game::CHAR_GUARD2]['position'];
         $targets = [];
-        if ($this->game->isKingBetweenGuards($wizardPos, $g1Pos, $g2Pos)) $targets[] = Game::CHAR_KING;
-        if ($this->game->isKingBetweenGuards($kingPos, $wizardPos, $g2Pos)) $targets[] = Game::CHAR_GUARD1;
-        if ($this->game->isKingBetweenGuards($kingPos, $g1Pos, $wizardPos)) $targets[] = Game::CHAR_GUARD2;
-
+        if ($this->game->isKingBetweenGuards($w, $g1, $g2)) $targets[] = Game::CHAR_KING;
+        if ($this->game->isKingBetweenGuards($k, $w, $g2)) $targets[] = Game::CHAR_GUARD1;
+        if ($this->game->isKingBetweenGuards($k, $g1, $w)) $targets[] = Game::CHAR_GUARD2;
         return $targets;
     }
 
@@ -486,7 +426,6 @@ class PlayerTurn extends GameState
         $jesterPos = (int)$pieces[Game::CHAR_JESTER]['position'];
         $kingPos = (int)$pieces[Game::CHAR_KING]['position'];
         $castle = $this->game->getPlayerCastle($playerId);
-
         $direction = $this->game->getPlayerDirection($playerId);
         if ($direction === Game::DIR_GREEN) {
             return $jesterPos < $kingPos && $jesterPos >= $castle[0];

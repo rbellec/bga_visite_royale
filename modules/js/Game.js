@@ -63,7 +63,10 @@ export class Game {
         this.buildBoard();
         this.placePieces(gamedatas.pieces);
         this.placeCrown(gamedatas.crown_position, gamedatas.crown_side);
-        this.renderHand(gamedatas.hand, {});
+
+        // Render hand with playable info from initial state args if available
+        const stateArgs = gamedatas.gamestate?.args;
+        this.renderHand(gamedatas.hand, stateArgs?.playableCards || {});
 
         this.setupNotifications();
 

@@ -50,8 +50,43 @@ Ce fichier documente les etapes, difficultes et decisions prises pendant le deve
 - 3 tentatives avant le premier lancement reussi
 - Bug namespace : les constantes `define()` de material.inc.php ne sont pas visibles dans le namespace du jeu
 
+### Bug #2 : Globals BGA — types int uniquement
+- `$this->bga->globals->set('played_type', '')` ne fonctionne pas : les globals via `initGameStateLabels` sont des **int** uniquement
+- Consequence : `getArgs()` retourne des valeurs inattendues, toutes les cartes apparaissent disabled
+- Solution : utiliser des constantes int (`PLAYED_NONE=0, PLAYED_KING=1, ...`) et des maps de conversion
+- **A verifier pour le skill** : documenter que les globals BGA sont strictement int, et recommander des constantes int pour tout tracking d'etat
+- **Doc trouvee** : https://en.doc.boardgamearena.com/Main_game_logic:_yourgamename.game.php
+  - `$this->bga->globals->set/get` = **any type** (JSON serialized) — systeme moderne
+  - `initGameStateLabels` = **int uniquement** — systeme legacy
+  - Ce sont **deux systemes distincts** ! Ne pas les melanger.
+  - **Pour le skill** : recommander `bga->globals` pour tout, documenter que `initGameStateLabels` est legacy/int-only
+
+### Decouverte : Quit programmatique fonctionne via mainsite.ajaxcall !
+- Le skill dit que le quit programmatique est impossible (CSRF)
+- En realite, `mainsite.ajaxcall('/table/table/quitgame.html', {table: N, neutralized: true}, mainsite, ok, err)` fonctionne !
+- `fetch()` direct echoue (CSRF), mais `mainsite.ajaxcall` ajoute le token automatiquement
+- **Pour le skill** : mettre a jour la methode de quit dans le test loop
+
+### Bug #3 : URL de jeu — /tableview vs /1/gamename
+- `/tableview?table=N` est la vue spectateur, pas la vue joueur
+- Pour jouer, il faut naviguer vers `/1/visiteroyale?table=N`
+- Le `game_play_area` n'existe pas en vue spectateur
+- **A noter pour le skill** : le test loop doit utiliser le bon URL
+
+---
+
+## Etape 3 : Logique de mouvement (2026-04-12)
+
+### Ce qui a ete fait
+- Cartes jouees une par une (flow conforme aux regles)
+- Logique de mouvement pour Roi, Sorcier, Fou, Gardes
+- Validation des mouvements (Roi entre Gardes, limites du plateau)
+- UI de choix pour les cartes Garde (quel garde, ou les deux)
+- Pouvoir du Sorcier (attirer Roi/Garde)
+- Privilege du Roi (2 cartes = deplacer la Cour)
+- Tracking du type joue ce tour (pour forcer meme type)
+
 ### Prochaines etapes
-- Implementer la logique de deplacement des pieces (cartes -> mouvements)
-- Tester les interactions joueur (clic sur cartes, jouer)
-- Implementer les pouvoirs Sorcier et Fou
+- Tester un tour complet (jouer carte, fin de tour, tour suivant)
+- Implementer le pouvoir du Fou (cartes Joker)
 - Ameliorer l'interface visuelle
