@@ -152,11 +152,35 @@ Ce fichier documente les etapes, difficultes et decisions prises pendant le deve
 - Le quit programmatique (`gameui.ajaxcall` depuis la page de jeu) fonctionne aussi
 - Le zombie handler gere automatiquement les tours du joueur qui a quitte
 
+### Decouverte : createTable API a change
+- L'endpoint `/lobby/lobby/createTable.html` retourne 404 sur BGA Studio
+- L'endpoint `/table/table/joingamealivetable.html` aussi 404
+- `window.confirm` est utilise par "Express start" — il faut l'overrider pour l'automatiser
+- **Pour le skill** : utiliser le bouton "Play with friends" depuis `/lobby?game=GAMEID` + "Express start" avec `window.confirm = () => true`
+
+---
+
+## Etape 5 : Test du pouvoir du Sorcier (2026-04-12)
+
+### Ce qui a ete teste
+- Nouvelle table #877402 avec positions initiales : Guard1=7, Jester=8, King=9, Wizard=10, Guard2=11
+- **Pouvoir du Sorcier** : Wizard entre les Gardes (pos 10, entre 7 et 11) ✓
+  - Cibles proposees : "Summon King" et "Summon Guard 2" ✓
+  - Guard1 pas propose (deplacement rendrait Roi hors des gardes) ✓
+  - Invocation du Roi (pos 9→10) reussie ✓
+  - Le pouvoir termine automatiquement le tour (→ MoveCrown → DrawCards → NextPlayer) ✓
+- **Fix Wizard Power confirme** : sur l'ancienne table, Wizard hors Cour → bouton absent ✓
+
+### Bilan de tous les tests
+- Cartes : King ✓, Guard g1 ✓, Guard g11 ✓, Guard gflank ✓, Wizard ✓, Jester ✓
+- Cumul de cartes meme type ✓
+- Pouvoir du Sorcier ✓
+- Flow complet du tour (jouer → fin → couronne → pioche → joueur suivant) ✓
+
 ---
 
 ## Prochaines etapes
 
-- Tester le pouvoir du Sorcier (avec Sorcier entre les Gardes)
 - Tester le mouvement de la Cour (2 cartes Roi)
 - Verifier la victoire (Roi/Couronne dans chateau)
 - Tester le pouvoir du Fou (cartes joker)
