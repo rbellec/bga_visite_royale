@@ -60,10 +60,10 @@ All core mechanics implemented and tested:
 - Win condition (King in castle)
 - Full turn cycle (play → crown → draw → next player)
 
-Remaining: Jester power (wildcard), UI polish.
+Remaining: UI polish.
 
 ## Credits
 
 - Game design: Reiner Knizia
 - Publisher: IELLO
-- BGA implementation: GoOn0 + Claude Code
+- BGA implementation: Raphael Bellec + Claude Code
