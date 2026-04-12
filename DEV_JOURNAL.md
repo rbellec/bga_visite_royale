@@ -182,6 +182,23 @@ Ce fichier documente les etapes, difficultes et decisions prises pendant le deve
 ## Prochaines etapes
 
 - Tester le mouvement de la Cour (2 cartes Roi)
-- Verifier la victoire (Roi/Couronne dans chateau)
+- ~~Verifier la victoire (Roi/Couronne dans chateau)~~ ✓ Teste avec debug action, fin de partie declenchee correctement
 - Tester le pouvoir du Fou (cartes joker)
 - Ameliorer l'UI
+
+---
+
+## Etape 6 : Test de la condition de victoire (2026-04-12)
+
+### Ce qui a ete teste
+- Ajoute un debug action temporaire `actDebugSetPosition` pour positionner les pieces rapidement
+- Place le Roi en pos 2, Guard1 en pos 0, Guard2 en pos 3
+- Joue une carte King (direction -1) → Roi pos 2→1 (chateau vert)
+- **End turn → "End of game" !** GoOn1 (vert) est declare vainqueur avec score 1 ✓
+- La condition `$kingPos <= POS_GREEN_CASTLE_MAX` dans CheckEndGame fonctionne correctement
+- Le debug action a ete supprime apres le test
+
+### Methode de test
+- Pour tester les conditions de victoire sans jouer 15+ tours, ajouter un `actDebugSetPosition` temporaire
+- Le `gameui.ajaxcall` appelle l'action PHP depuis JS pour repositionner les pieces
+- **Pour le skill** : documenter cette technique de debug action pour tester les end-game rapidement
