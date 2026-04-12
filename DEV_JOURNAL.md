@@ -86,7 +86,42 @@ Ce fichier documente les etapes, difficultes et decisions prises pendant le deve
 - Privilege du Roi (2 cartes = deplacer la Cour)
 - Tracking du type joue ce tour (pour forcer meme type)
 
-### Prochaines etapes
-- Tester un tour complet (jouer carte, fin de tour, tour suivant)
-- Implementer le pouvoir du Fou (cartes Joker)
-- Ameliorer l'interface visuelle
+### Bug #4 : Cartes toutes disabled au chargement
+- `setup()` appelait `renderHand(hand, {})` avec un objet vide pour playableCards
+- Le framework appelle `setup()` avant `onEnteringState()`, donc la main se rend sans info de jouabilite
+- Solution : lire `gamedatas.gamestate.args.playableCards` dans `setup()` pour le rendu initial
+- Note : `onEnteringState` n'est pas rappele apres `setup()` — il faut que `setup()` fasse le rendu complet
+
+### Bug #5 : C'est pas mon tour !
+- Le premier joueur est celui avec le Sorcier dans son Duche (regle du jeu)
+- En hotseat, le Player2 (vert) avait le sorcier → c'etait son tour, pas le notre
+- Solution : naviguer avec `?testuser=ID` pour jouer en tant que l'autre joueur
+
+### Premier tour joue avec succes !
+- Carte Sorcier (valeur 2) jouee par Player2 (vert, direction -1)
+- Sorcier deplace de position 8 → 6 (2 cases vers le vert) ✓
+- Main passe de 8 a 7 cartes ✓
+- Seules les cartes Sorcier restent jouables (meme type requis) ✓
+- Bouton "End turn" apparait ✓
+- Fin de tour → couronne → pioche → joueur suivant ✓
+- **Le cycle complet de jeu fonctionne !**
+
+---
+
+## Resume des ameliorations pour le skill bga-alpha
+
+1. **Constantes** : recommander `public const` dans Game.php au lieu de `define()` dans material.inc.php (probleme namespace)
+2. **Globals** : `bga->globals->set/get` (any type, JSON) au lieu de `initGameStateLabels` (legacy, int-only). Ce sont deux systemes distincts.
+3. **Quit programmatique** : `mainsite.ajaxcall('/table/table/quitgame.html', {table: N, neutralized: true}, mainsite, ok, err)` fonctionne ! Mettre a jour le test loop.
+4. **URL de jeu** : `/1/GAMENAME?table=N` pour la vue joueur, `/tableview?table=N` pour spectateur
+5. **setup() et onEnteringState()** : le framework n'appelle pas `onEnteringState` apres `setup()` — il faut rendre l'etat complet dans `setup()` en lisant `gamedatas.gamestate.args`
+6. **Namespace PascalCase** : le scaffold genere `Bga\Games\VisiteRoyale` (PascalCase), pas lowercase comme le skill l'indique
+
+---
+
+## Prochaines etapes
+
+- Tester les autres types de cartes (Roi, Gardes, Fou)
+- Tester les pouvoirs (Sorcier, Fou joker)
+- Verifier la victoire (Roi/Couronne dans chateau)
+- Ameliorer l'UI
