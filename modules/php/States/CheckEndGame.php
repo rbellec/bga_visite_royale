@@ -44,7 +44,7 @@ class CheckEndGame extends GameState
         }
 
         $reshuffles = (int)$this->game->bga->globals->get('deck_reshuffles');
-        $deckEmpty = (int)$this->game->getObjectFromDB("SELECT COUNT(*) AS c FROM vr_cards WHERE card_location='deck'")['c'] === 0;
+        $deckEmpty = $this->game->cards->countCardInLocation('deck') === 0;
 
         if ($reshuffles >= 2 && $deckEmpty) {
             if ($kingPos < Game::POS_FOUNTAIN) {

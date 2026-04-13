@@ -39,25 +39,42 @@ class Game extends Table
     public const COLOR_RED = 'ff0000';
 
     // Card deck definition (54 cards total)
+    // type encodes card_type + subtype, type_arg encodes the movement value
     public const CARD_DEFINITIONS = [
-        ['type' => 'king', 'value' => 1, 'count' => 12],
-        ['type' => 'guard', 'value' => 1, 'subtype' => 'g1', 'count' => 4],
-        ['type' => 'guard', 'value' => 2, 'subtype' => 'g11', 'count' => 10],
-        ['type' => 'guard', 'value' => 0, 'subtype' => 'gflank', 'count' => 2],
-        ['type' => 'wizard', 'value' => 1, 'count' => 2],
-        ['type' => 'wizard', 'value' => 2, 'count' => 8],
-        ['type' => 'wizard', 'value' => 3, 'count' => 2],
-        ['type' => 'jester', 'value' => 1, 'count' => 1],
-        ['type' => 'jester', 'value' => 2, 'count' => 3],
-        ['type' => 'jester', 'value' => 3, 'count' => 4],
-        ['type' => 'jester', 'value' => 4, 'count' => 3],
-        ['type' => 'jester', 'value' => 5, 'count' => 1],
-        ['type' => 'jester', 'value' => 0, 'subtype' => 'jM', 'count' => 2],
+        ['type' => 'king',         'type_arg' => 1, 'nbr' => 12],
+        ['type' => 'guard_g1',     'type_arg' => 1, 'nbr' => 4],
+        ['type' => 'guard_g11',    'type_arg' => 2, 'nbr' => 10],
+        ['type' => 'guard_gflank', 'type_arg' => 0, 'nbr' => 2],
+        ['type' => 'wizard',       'type_arg' => 1, 'nbr' => 2],
+        ['type' => 'wizard',       'type_arg' => 2, 'nbr' => 8],
+        ['type' => 'wizard',       'type_arg' => 3, 'nbr' => 2],
+        ['type' => 'jester',       'type_arg' => 1, 'nbr' => 1],
+        ['type' => 'jester',       'type_arg' => 2, 'nbr' => 3],
+        ['type' => 'jester',       'type_arg' => 3, 'nbr' => 4],
+        ['type' => 'jester',       'type_arg' => 4, 'nbr' => 3],
+        ['type' => 'jester',       'type_arg' => 5, 'nbr' => 1],
+        ['type' => 'jester_jM',    'type_arg' => 0, 'nbr' => 2],
     ];
+
+    // Map card_type to base character type (for turn tracking)
+    public const CARD_TYPE_TO_BASE = [
+        'king' => 'king',
+        'guard_g1' => 'guard',
+        'guard_g11' => 'guard',
+        'guard_gflank' => 'guard',
+        'wizard' => 'wizard',
+        'jester' => 'jester',
+        'jester_jM' => 'jester',
+    ];
+
+    public $cards; // Deck component
 
     public function __construct()
     {
         parent::__construct();
+        $this->cards = $this->deckFactory->createDeck('vr_card');
+        $this->cards->autoreshuffle = true;
+        $this->cards->autoreshuffle_trigger = ['obj' => $this, 'method' => 'deckAutoReshuffle'];
     }
 
     // Played type constants (for turn tracking)
@@ -154,67 +171,35 @@ class Game extends Table
 
     private function setupCards(array $players): void
     {
-        $order = 0;
-        $cards = [];
-        foreach (self::CARD_DEFINITIONS as $def) {
-            for ($i = 0; $i < $def['count']; $i++) {
-                $subtype = $def['subtype'] ?? null;
-                $subtypeVal = $subtype !== null ? "'{$subtype}'" : "NULL";
-                $cards[] = "('{$def['type']}', {$def['value']}, {$subtypeVal}, 'deck', 0, {$order})";
-                $order++;
-            }
-        }
-        $this->DbQuery("INSERT INTO `vr_cards` (`card_type`, `card_value`, `card_subtype`, `card_location`, `card_location_arg`, `card_order`) VALUES " . implode(",", $cards));
+        $this->cards->createCards(self::CARD_DEFINITIONS, 'deck');
+        $this->cards->shuffle('deck');
 
-        $this->shuffleDeck();
-
-        $playerIds = array_keys($players);
-        foreach ($playerIds as $pid) {
-            $this->drawCards((int)$pid, 8);
+        foreach (array_keys($players) as $pid) {
+            $this->cards->pickCards(8, 'deck', (int)$pid);
         }
     }
 
-    public function shuffleDeck(): void
+    public function deckAutoReshuffle(): void
     {
-        $deckCards = $this->getCollectionFromDb("SELECT card_id FROM vr_cards WHERE card_location='deck'");
-        $ids = array_keys($deckCards);
-        shuffle($ids);
-        foreach ($ids as $i => $id) {
-            $this->DbQuery("UPDATE vr_cards SET card_order={$i} WHERE card_id={$id}");
-        }
+        $reshuffles = (int)$this->bga->globals->get('deck_reshuffles');
+        $this->bga->globals->set('deck_reshuffles', $reshuffles + 1);
+        $this->bga->globals->set('crown_side', self::CROWN_SMALL);
+        $this->bga->notify->all('deckReshuffled', clienttranslate('The discard pile is reshuffled into a new draw pile. The Crown is flipped to its small side.'), []);
     }
 
     public function drawCards(int $playerId, int $count): int
     {
-        $drawn = 0;
-        for ($i = 0; $i < $count; $i++) {
-            $card = $this->getObjectFromDB("SELECT card_id FROM vr_cards WHERE card_location='deck' ORDER BY card_order ASC LIMIT 1");
-            if ($card === null) {
-                $reshuffles = (int)$this->bga->globals->get('deck_reshuffles');
-                if ($reshuffles >= 2) {
-                    break;
-                }
-                $this->DbQuery("UPDATE vr_cards SET card_location='deck' WHERE card_location='discard'");
-                $this->shuffleDeck();
-                $this->bga->globals->set('deck_reshuffles', $reshuffles + 1);
-                $this->bga->globals->set('crown_side', self::CROWN_SMALL);
-
-                $this->bga->notify->all('deckReshuffled', clienttranslate('The discard pile is reshuffled into a new draw pile. The Crown is flipped to its small side.'), []);
-
-                $card = $this->getObjectFromDB("SELECT card_id FROM vr_cards WHERE card_location='deck' ORDER BY card_order ASC LIMIT 1");
-                if ($card === null) {
-                    break;
-                }
-            }
-            $this->DbQuery("UPDATE vr_cards SET card_location='hand', card_location_arg={$playerId} WHERE card_id={$card['card_id']}");
-            $drawn++;
+        $reshuffles = (int)$this->bga->globals->get('deck_reshuffles');
+        if ($reshuffles >= 2 && $this->cards->countCardInLocation('deck') === 0) {
+            return 0;
         }
-        return $drawn;
+        $drawn = $this->cards->pickCards($count, 'deck', $playerId);
+        return $drawn ? count($drawn) : 0;
     }
 
     public function getPlayerHand(int $playerId): array
     {
-        return $this->getCollectionFromDb("SELECT card_id, card_type, card_value, card_subtype FROM vr_cards WHERE card_location='hand' AND card_location_arg={$playerId}");
+        return $this->cards->getPlayerHand($playerId);
     }
 
     public function getPiecePosition(int $pieceId): int
@@ -235,7 +220,43 @@ class Game extends Table
 
     public function discardCard(int $cardId): void
     {
-        $this->DbQuery("UPDATE vr_cards SET card_location='discard', card_location_arg=0 WHERE card_id={$cardId}");
+        $this->cards->playCard($cardId);
+    }
+
+    /**
+     * Convert Deck card format to our game format.
+     * Deck returns: id, type, type_arg, location, location_arg
+     * We need: card_id, card_type (base), card_value, card_subtype
+     */
+    public static function parseCard(array $card): array
+    {
+        $deckType = $card['type'];
+        $baseType = self::CARD_TYPE_TO_BASE[$deckType] ?? $deckType;
+        $subtype = null;
+        if (str_contains($deckType, '_')) {
+            $subtype = substr($deckType, strpos($deckType, '_') + 1);
+        }
+        return [
+            'card_id' => $card['id'],
+            'card_type' => $baseType,
+            'card_value' => (int)$card['type_arg'],
+            'card_subtype' => $subtype,
+            'deck_type' => $deckType, // keep original for reference
+        ];
+    }
+
+    /**
+     * Get player hand in game format (parsed cards indexed by card_id).
+     */
+    public function getPlayerHandParsed(int $playerId): array
+    {
+        $raw = $this->cards->getPlayerHand($playerId);
+        $result = [];
+        foreach ($raw as $card) {
+            $parsed = self::parseCard($card);
+            $result[$parsed['card_id']] = $parsed;
+        }
+        return $result;
     }
 
     public function getPlayerDirection(int $playerId): int
@@ -290,11 +311,11 @@ class Game extends Table
         );
 
         $result['pieces'] = $this->getAllPiecePositions();
-        $result['hand'] = $this->getPlayerHand($currentPlayerId);
+        $result['hand'] = $this->getPlayerHandParsed($currentPlayerId);
         $result['crown_position'] = (int)$this->bga->globals->get('crown_position');
         $result['crown_side'] = (int)$this->bga->globals->get('crown_side');
-        $result['deck_count'] = (int)$this->getObjectFromDB("SELECT COUNT(*) AS c FROM vr_cards WHERE card_location='deck'")['c'];
-        $result['discard_count'] = (int)$this->getObjectFromDB("SELECT COUNT(*) AS c FROM vr_cards WHERE card_location='discard'")['c'];
+        $result['deck_count'] = $this->cards->countCardInLocation('deck');
+        $result['discard_count'] = $this->cards->countCardInLocation('discard');
 
         return $result;
     }

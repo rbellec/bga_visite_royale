@@ -22,7 +22,7 @@ class PlayerTurn extends GameState
     public function getArgs(): array
     {
         $playerId = (int)$this->game->getActivePlayerId();
-        $hand = $this->game->getPlayerHand($playerId);
+        $hand = $this->game->getPlayerHandParsed($playerId);
         $pieces = $this->game->getAllPiecePositions();
         $direction = $this->game->getPlayerDirection($playerId);
 
@@ -62,7 +62,7 @@ class PlayerTurn extends GameState
     #[PossibleAction]
     public function actPlayCard(int $card_id, int $activePlayerId): string
     {
-        $hand = $this->game->getPlayerHand($activePlayerId);
+        $hand = $this->game->getPlayerHandParsed($activePlayerId);
         if (!isset($hand[$card_id])) {
             throw new UserException('Card not in your hand');
         }
@@ -104,7 +104,7 @@ class PlayerTurn extends GameState
     #[PossibleAction]
     public function actPlayCourtMove(int $card_id1, int $card_id2, int $activePlayerId): string
     {
-        $hand = $this->game->getPlayerHand($activePlayerId);
+        $hand = $this->game->getPlayerHandParsed($activePlayerId);
         if (!isset($hand[$card_id1]) || !isset($hand[$card_id2])) {
             throw new UserException('Cards not in your hand');
         }
@@ -156,7 +156,7 @@ class PlayerTurn extends GameState
     #[PossibleAction]
     public function actPlayGuardChoice(int $card_id, int $guardId, int $activePlayerId): string
     {
-        $hand = $this->game->getPlayerHand($activePlayerId);
+        $hand = $this->game->getPlayerHandParsed($activePlayerId);
         if (!isset($hand[$card_id])) {
             throw new UserException('Card not in your hand');
         }
@@ -202,7 +202,7 @@ class PlayerTurn extends GameState
     #[PossibleAction]
     public function actPlayGuardBoth(int $card_id, int $activePlayerId): string
     {
-        $hand = $this->game->getPlayerHand($activePlayerId);
+        $hand = $this->game->getPlayerHandParsed($activePlayerId);
         if (!isset($hand[$card_id])) {
             throw new UserException('Card not in your hand');
         }
@@ -262,7 +262,7 @@ class PlayerTurn extends GameState
     #[PossibleAction]
     public function actPlayJesterAs(int $card_id, string $asType, int $guardId, int $activePlayerId): string
     {
-        $hand = $this->game->getPlayerHand($activePlayerId);
+        $hand = $this->game->getPlayerHandParsed($activePlayerId);
         if (!isset($hand[$card_id])) {
             throw new UserException('Card not in your hand');
         }

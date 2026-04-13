@@ -21,8 +21,7 @@ class DrawCards extends GameState
     {
         $activePlayerId = (int)$this->game->getActivePlayerId();
 
-        // Count cards in hand
-        $handCount = count($this->game->getPlayerHand($activePlayerId));
+        $handCount = $this->game->cards->countCardInLocation('hand', $activePlayerId);
         $toDraw = 8 - $handCount;
 
         if ($toDraw > 0) {
@@ -30,10 +29,10 @@ class DrawCards extends GameState
             if ($drawn > 0) {
                 $this->game->bga->notify->player($activePlayerId, 'cardsDrawn', clienttranslate('You draw ${count} card(s)'), [
                     'count' => $drawn,
-                    'hand' => $this->game->getPlayerHand($activePlayerId),
+                    'hand' => $this->game->getPlayerHandParsed($activePlayerId),
                 ]);
                 $this->game->bga->notify->all('deckUpdated', '', [
-                    'deck_count' => (int)$this->game->getObjectFromDB("SELECT COUNT(*) AS c FROM vr_cards WHERE card_location='deck'")['c'],
+                    'deck_count' => $this->game->cards->countCardInLocation('deck'),
                 ]);
             }
         }
